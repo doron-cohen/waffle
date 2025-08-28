@@ -17,7 +17,7 @@ func NewWorkflowBuilder(eventKey string, addWorkflow func(eventKey string, workf
 	}
 }
 
-func (w *WorkflowBuilder) Do(f func(ctx context.Context) error) *WorkflowBuilder {
+func (w *WorkflowBuilder) Do(f func(ctx context.Context, data any) error) *WorkflowBuilder {
 	w.workflow.action = f
 
 	return w
@@ -30,10 +30,10 @@ func (w *WorkflowBuilder) Build() error {
 }
 
 type Workflow struct {
-	action func(ctx context.Context) error
+	action func(ctx context.Context, data any) error
 }
 
 // Run runs the workflow.
-func (w *Workflow) Run(ctx context.Context) error {
-	return w.action(ctx)
+func (w *Workflow) Run(ctx context.Context, data any) error {
+	return w.action(ctx, data)
 }

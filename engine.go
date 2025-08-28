@@ -24,13 +24,13 @@ func (e *Engine) On(eventKey string) *WorkflowBuilder {
 // Send sends an event to the engine which will trigger the relevant workflows.
 // It returns true if the event was sent, false if no workflows are registered
 // for the event.
-func (e *Engine) Send(ctx context.Context, eventKey string) bool {
+func (e *Engine) Send(ctx context.Context, eventKey string, data any) bool {
 	workflow, ok := e.workflows[eventKey]
 	if !ok {
 		return false
 	}
 
-	go workflow.Run(ctx)
+	go workflow.Run(ctx, data)
 
 	return true
 }

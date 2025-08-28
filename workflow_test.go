@@ -17,7 +17,7 @@ func TestWorkflowBuilder(t *testing.T) {
 
 			return nil
 		},
-	).Do(func(_ context.Context) error {
+	).Do(func(_ context.Context, _ any) error {
 		return nil
 	}).Build()
 
