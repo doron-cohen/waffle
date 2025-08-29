@@ -17,7 +17,7 @@ func TestEngine_Send(t *testing.T) {
 	engine := waffle.NewEngine()
 
 	// Register action for event
-	engine.On("test").Do(func(_ context.Context, _ any) error {
+	engine.On("test").Do("test", func(_ context.Context, _ any) error {
 		ran = true
 		return nil
 	})
@@ -35,7 +35,7 @@ func TestEngine_SendWithData(t *testing.T) {
 
 	engine := waffle.NewEngine()
 
-	engine.On("test").Do(func(_ context.Context, d any) error {
+	engine.On("test").Do("test", func(_ context.Context, d any) error {
 		var ok bool
 		data, ok = d.(string)
 		if !ok {
@@ -57,7 +57,7 @@ func TestEngine_SendMultiple(t *testing.T) {
 
 	engine := waffle.NewEngine()
 
-	engine.On("test").Do(func(_ context.Context, _ any) error {
+	engine.On("test").Do("test", func(_ context.Context, _ any) error {
 		counter.Add(1)
 		return nil
 	})
@@ -71,5 +71,50 @@ func TestEngine_SendMultiple(t *testing.T) {
 
 	time.Sleep(100 * time.Millisecond)
 
+	require.Equal(t, int32(2), counter.Load())
+}
+
+func TestEngine_DifferentActionsForEvent(t *testing.T) {
+	ran1 := false
+	ran2 := false
+
+	engine := waffle.NewEngine()
+
+	engine.On("test").Do("test1", func(_ context.Context, _ any) error {
+		ran1 = true
+		return nil
+	})
+
+	engine.On("test").Do("test2", func(_ context.Context, _ any) error {
+		ran2 = true
+		return nil
+	})
+
+	engine.Send(t.Context(), "test", nil)
+
+	time.Sleep(100 * time.Millisecond)
+
+	require.False(t, ran1)
+	require.True(t, ran2)
+}
+
+func TestEngine_OneActionForMultipleEvents(t *testing.T) {
+	counter := atomic.Int32{}
+
+	engine := waffle.NewEngine()
+
+	engine.On("test1", "test2").Do("test", func(_ context.Context, _ any) error {
+		counter.Add(1)
+		return nil
+	})
+
+	engine.Send(t.Context(), "test1", nil)
+
+	time.Sleep(100 * time.Millisecond)
+	require.Equal(t, int32(1), counter.Load())
+
+	engine.Send(t.Context(), "test2", nil)
+
+	time.Sleep(100 * time.Millisecond)
 	require.Equal(t, int32(2), counter.Load())
 }
