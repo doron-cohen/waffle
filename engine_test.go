@@ -118,3 +118,59 @@ func TestEngine_OneActionForMultipleEvents(t *testing.T) {
 	time.Sleep(100 * time.Millisecond)
 	require.Equal(t, int32(2), counter.Load())
 }
+
+func TestEngine_ConcurrencyLimit(t *testing.T) {
+	counter := atomic.Int32{}
+
+	engine := waffle.NewEngine()
+
+	engine.
+		On("test").
+		Concurrency(1).
+		Do("test", func(_ context.Context, _ any) error {
+			counter.Add(1)
+			time.Sleep(100 * time.Millisecond)
+			return nil
+		})
+
+	engine.Send(t.Context(), "test", nil)
+	engine.Send(t.Context(), "test", nil)
+	engine.Send(t.Context(), "test", nil)
+	engine.Send(t.Context(), "test", nil)
+	engine.Send(t.Context(), "test", nil)
+
+	time.Sleep(200 * time.Millisecond)
+	require.Equal(t, int32(1), counter.Load())
+}
+
+func TestEngine_ConcurrencyLimit_MultipleActions(t *testing.T) {
+	counter1 := atomic.Int32{}
+	counter2 := atomic.Int32{}
+
+	engine := waffle.NewEngine()
+
+	engine.
+		On("test").
+		Concurrency(1).
+		Do("test", func(_ context.Context, _ any) error {
+			counter1.Add(1)
+			time.Sleep(100 * time.Millisecond)
+			return nil
+		})
+
+	engine.On("test2").
+		Do("test2", func(_ context.Context, _ any) error {
+			counter2.Add(1)
+			time.Sleep(100 * time.Millisecond)
+			return nil
+		})
+
+	engine.Send(t.Context(), "test", nil)
+	engine.Send(t.Context(), "test", nil)
+	engine.Send(t.Context(), "test2", nil)
+	engine.Send(t.Context(), "test2", nil)
+
+	time.Sleep(200 * time.Millisecond)
+	require.Equal(t, int32(1), counter1.Load())
+	require.Equal(t, int32(2), counter2.Load())
+}
