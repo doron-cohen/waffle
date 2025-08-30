@@ -17,10 +17,10 @@ func TestEngine_Send(t *testing.T) {
 	engine := waffle.NewEngine()
 
 	// Register action for event
-	engine.On("test").Do("test", func(_ context.Context, _ any) error {
+	require.NoError(t, engine.On("test").Do("test", func(_ context.Context, _ any) error {
 		ran = true
 		return nil
-	})
+	}))
 
 	started := engine.Send(t.Context(), "test", nil)
 	require.True(t, started)
@@ -35,14 +35,14 @@ func TestEngine_SendWithData(t *testing.T) {
 
 	engine := waffle.NewEngine()
 
-	engine.On("test").Do("test", func(_ context.Context, d any) error {
+	require.NoError(t, engine.On("test").Do("test", func(_ context.Context, d any) error {
 		var ok bool
 		data, ok = d.(string)
 		if !ok {
 			return fmt.Errorf("expected string, got %T", d)
 		}
 		return nil
-	})
+	}))
 
 	started := engine.Send(t.Context(), "test", "some data")
 	require.True(t, started)
@@ -57,10 +57,10 @@ func TestEngine_SendMultiple(t *testing.T) {
 
 	engine := waffle.NewEngine()
 
-	engine.On("test").Do("test", func(_ context.Context, _ any) error {
+	require.NoError(t, engine.On("test").Do("test", func(_ context.Context, _ any) error {
 		counter.Add(1)
 		return nil
-	})
+	}))
 
 	// Send multiple events
 	ran1 := engine.Send(t.Context(), "test", nil)
@@ -80,15 +80,15 @@ func TestEngine_DifferentActionsForEvent(t *testing.T) {
 
 	engine := waffle.NewEngine()
 
-	engine.On("test").Do("test1", func(_ context.Context, _ any) error {
+	require.NoError(t, engine.On("test").Do("test1", func(_ context.Context, _ any) error {
 		ran1 = true
 		return nil
-	})
+	}))
 
-	engine.On("test").Do("test2", func(_ context.Context, _ any) error {
+	require.NoError(t, engine.On("test").Do("test2", func(_ context.Context, _ any) error {
 		ran2 = true
 		return nil
-	})
+	}))
 
 	engine.Send(t.Context(), "test", nil)
 
@@ -103,10 +103,10 @@ func TestEngine_OneActionForMultipleEvents(t *testing.T) {
 
 	engine := waffle.NewEngine()
 
-	engine.On("test1", "test2").Do("test", func(_ context.Context, _ any) error {
+	require.NoError(t, engine.On("test1", "test2").Do("test", func(_ context.Context, _ any) error {
 		counter.Add(1)
 		return nil
-	})
+	}))
 
 	engine.Send(t.Context(), "test1", nil)
 
@@ -124,14 +124,14 @@ func TestEngine_ConcurrencyLimit(t *testing.T) {
 
 	engine := waffle.NewEngine()
 
-	engine.
+	require.NoError(t, engine.
 		On("test").
 		Concurrency(1).
 		Do("test", func(_ context.Context, _ any) error {
 			counter.Add(1)
 			time.Sleep(100 * time.Millisecond)
 			return nil
-		})
+		}))
 
 	engine.Send(t.Context(), "test", nil)
 	engine.Send(t.Context(), "test", nil)
@@ -149,21 +149,21 @@ func TestEngine_ConcurrencyLimit_MultipleActions(t *testing.T) {
 
 	engine := waffle.NewEngine()
 
-	engine.
+	require.NoError(t, engine.
 		On("test").
 		Concurrency(1).
 		Do("test", func(_ context.Context, _ any) error {
 			counter1.Add(1)
 			time.Sleep(100 * time.Millisecond)
 			return nil
-		})
+		}))
 
-	engine.On("test2").
+	require.NoError(t, engine.On("test2").
 		Do("test2", func(_ context.Context, _ any) error {
 			counter2.Add(1)
 			time.Sleep(100 * time.Millisecond)
 			return nil
-		})
+		}))
 
 	engine.Send(t.Context(), "test", nil)
 	engine.Send(t.Context(), "test", nil)
@@ -180,7 +180,7 @@ func TestEngine_ConcurrencyGroup_Basic(t *testing.T) {
 
 	engine := waffle.NewEngine()
 
-	engine.
+	require.NoError(t, engine.
 		On("test").
 		ConcurrencyGroup("user", 1, func(_ context.Context, data any) string {
 			return data.(string)
@@ -189,7 +189,7 @@ func TestEngine_ConcurrencyGroup_Basic(t *testing.T) {
 			users = append(users, data.(string))
 			time.Sleep(100 * time.Millisecond)
 			return nil
-		})
+		}))
 
 	// Send events with same user ID - should be limited
 	engine.Send(t.Context(), "test", "user1")
@@ -209,7 +209,7 @@ func TestEngine_ConcurrencyGroup_MultipleGroupsWithSameKey(t *testing.T) {
 
 	engine := waffle.NewEngine()
 
-	engine.
+	require.NoError(t, engine.
 		On("test").
 		ConcurrencyGroup("userA", 2, func(_ context.Context, data any) string {
 			return data.(string)
@@ -222,7 +222,7 @@ func TestEngine_ConcurrencyGroup_MultipleGroupsWithSameKey(t *testing.T) {
 			users = append(users, data.(string))
 			time.Sleep(100 * time.Millisecond)
 			return nil
-		})
+		}))
 
 	// Send events that should be limited by both groups
 	engine.Send(t.Context(), "test", "user1")
@@ -241,7 +241,7 @@ func TestEngine_ConcurrencyGroup_WithGlobalLimit(t *testing.T) {
 
 	engine := waffle.NewEngine()
 
-	engine.
+	require.NoError(t, engine.
 		On("test").
 		Concurrency(2). // global limit of 2
 		ConcurrencyGroup("user", 1, func(_ context.Context, data any) string {
@@ -252,7 +252,7 @@ func TestEngine_ConcurrencyGroup_WithGlobalLimit(t *testing.T) {
 			users = append(users, data.(string))
 			time.Sleep(100 * time.Millisecond)
 			return nil
-		})
+		}))
 
 	// Send events - global limit should allow 2, but user group should further limit
 	engine.Send(t.Context(), "test", "user1") // runs
@@ -270,8 +270,8 @@ func TestEngine_ConcurrencyGroup_KeyFunctionNil(t *testing.T) {
 
 	engine := waffle.NewEngine()
 
-	// Test with nil key function - should use empty string as key
-	engine.
+	// Test with nil key function - should return an error
+	err := engine.
 		On("test").
 		ConcurrencyGroup("global", 1, nil).
 		Do("test", func(_ context.Context, _ any) error {
@@ -280,11 +280,8 @@ func TestEngine_ConcurrencyGroup_KeyFunctionNil(t *testing.T) {
 			return nil
 		})
 
-	engine.Send(t.Context(), "test", "data1")
-	engine.Send(t.Context(), "test", "data2") // should be blocked
-
-	time.Sleep(200 * time.Millisecond)
-	require.Equal(t, int32(1), counter.Load())
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "keyFunc must be provided")
 }
 
 func TestEngine_ConcurrencyGroup_ComplexData(t *testing.T) {
@@ -297,7 +294,7 @@ func TestEngine_ConcurrencyGroup_ComplexData(t *testing.T) {
 
 	engine := waffle.NewEngine()
 
-	engine.
+	require.NoError(t, engine.
 		On("process").
 		ConcurrencyGroup("user", 1, func(_ context.Context, data any) string {
 			return data.(UserRequest).UserID
@@ -309,7 +306,7 @@ func TestEngine_ConcurrencyGroup_ComplexData(t *testing.T) {
 			counter.Add(1)
 			time.Sleep(50 * time.Millisecond)
 			return nil
-		})
+		}))
 
 	// Test different combinations
 	engine.Send(t.Context(), "process", UserRequest{UserID: "user1", Action: "read"})
@@ -328,7 +325,7 @@ func TestEngine_ContextCancellation(t *testing.T) {
 
 	engine := waffle.NewEngine()
 
-	engine.
+	require.NoError(t, engine.
 		On("test").
 		ConcurrencyGroup("user", 1, func(_ context.Context, data any) string {
 			return data.(string)
@@ -342,7 +339,7 @@ func TestEngine_ContextCancellation(t *testing.T) {
 			case <-ctx.Done():
 				return ctx.Err()
 			}
-		})
+		}))
 
 	// Send first event
 	engine.Send(ctx, "test", "user1")
@@ -358,35 +355,13 @@ func TestEngine_ContextCancellation(t *testing.T) {
 	require.Equal(t, int32(2), counter.Load())
 }
 
-func TestEngine_ConcurrencyGroup_ZeroLimit(t *testing.T) {
-	counter := atomic.Int32{}
-
-	engine := waffle.NewEngine()
-
-	engine.
-		On("test").
-		ConcurrencyGroup("blocked", 0, func(_ context.Context, data any) string {
-			return data.(string)
-		}).
-		Do("test", func(_ context.Context, _ any) error {
-			counter.Add(1)
-			return nil
-		})
-
-	// Send event - should not run due to zero limit
-	engine.Send(t.Context(), "test", "user1")
-
-	time.Sleep(100 * time.Millisecond)
-	require.Equal(t, int32(0), counter.Load())
-}
-
 func TestEngine_ConcurrencyGroup_EmptyGroupName(t *testing.T) {
 	counter := atomic.Int32{}
 
 	engine := waffle.NewEngine()
 
-	// Empty group name should work as a regular group
-	engine.
+	// Empty group name should return an error
+	err := engine.
 		On("test").
 		ConcurrencyGroup("", 1, func(_ context.Context, data any) string {
 			return data.(string)
@@ -397,9 +372,127 @@ func TestEngine_ConcurrencyGroup_EmptyGroupName(t *testing.T) {
 			return nil
 		})
 
-	engine.Send(t.Context(), "test", "user1")
-	engine.Send(t.Context(), "test", "user1") // should be blocked
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "groupName must be provided")
+}
 
-	time.Sleep(200 * time.Millisecond)
-	require.Equal(t, int32(1), counter.Load())
+func TestActionBuilder_MultipleErrors(t *testing.T) {
+	engine := waffle.NewEngine()
+
+	// Create multiple errors in the builder
+	err := engine.
+		On("test").
+		Concurrency(0).                                                 // negative limit
+		ConcurrencyGroup("", 1, func(_ context.Context, _ any) string { // empty group name
+			return "test"
+		}).
+		ConcurrencyGroup("valid", 1, nil). // nil key function
+		Do("test", func(_ context.Context, _ any) error {
+			return nil
+		})
+
+	require.Error(t, err)
+
+	// Should contain all three error messages
+	errorMsg := err.Error()
+	require.Contains(t, errorMsg, "Concurrency: limit must be non-negative")
+	require.Contains(t, errorMsg, "groupName must be provided")
+	require.Contains(t, errorMsg, "keyFunc must be provided")
+
+	// Should contain comma separators
+	require.Contains(t, errorMsg, ", ")
+}
+
+func TestActionBuilder_NegativeConcurrency(t *testing.T) {
+	engine := waffle.NewEngine()
+
+	err := engine.
+		On("test").
+		Concurrency(0).
+		Do("test", func(_ context.Context, _ any) error {
+			return nil
+		})
+
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "Concurrency: limit must be non-negative")
+}
+
+func TestActionBuilder_ErrorDoesNotRegisterAction(t *testing.T) {
+	counter := atomic.Int32{}
+
+	engine := waffle.NewEngine()
+
+	// Try to register with invalid configuration
+	err := engine.
+		On("test").
+		Concurrency(0).
+		Do("test", func(_ context.Context, _ any) error {
+			counter.Add(1)
+			return nil
+		})
+
+	require.Error(t, err)
+
+	// Action should not be registered, so sending event should not trigger it
+	ran := engine.Send(t.Context(), "test", nil)
+	require.False(t, ran)
+
+	time.Sleep(100 * time.Millisecond)
+	require.Equal(t, int32(0), counter.Load())
+}
+
+func TestErrBuilderBadParams_Error(t *testing.T) {
+	// Test single error
+	err := &waffle.ErrBuilderBadParams{
+		Errors: []error{fmt.Errorf("test error")},
+	}
+	require.Equal(t, "builder errors: test error", err.Error())
+
+	// Test multiple errors
+	err = &waffle.ErrBuilderBadParams{
+		Errors: []error{
+			fmt.Errorf("first error"),
+			fmt.Errorf("second error"),
+			fmt.Errorf("third error"),
+		},
+	}
+	expected := "builder errors: first error, second error, third error"
+	require.Equal(t, expected, err.Error())
+
+	// Test empty errors
+	err = &waffle.ErrBuilderBadParams{
+		Errors: []error{},
+	}
+	require.Equal(t, "builder errors", err.Error())
+}
+
+func TestErrBuilderBadParams_Unwrap(t *testing.T) {
+	originalErrors := []error{
+		fmt.Errorf("error 1"),
+		fmt.Errorf("error 2"),
+	}
+
+	err := &waffle.ErrBuilderBadParams{
+		Errors: originalErrors,
+	}
+
+	unwrapped := err.Unwrap()
+	require.Equal(t, originalErrors, unwrapped)
+	require.Len(t, unwrapped, 2)
+	require.Equal(t, "error 1", unwrapped[0].Error())
+	require.Equal(t, "error 2", unwrapped[1].Error())
+}
+
+func TestErrBuilderBadParams_Is(t *testing.T) {
+	err := &waffle.ErrBuilderBadParams{
+		Errors: []error{fmt.Errorf("test error")},
+	}
+
+	// Test that it implements the error interface
+	var _ error = err
+
+	// Test that it can be type asserted
+	var builderErr *waffle.ErrBuilderBadParams
+	require.ErrorAs(t, err, &builderErr)
+	require.NotNil(t, builderErr)
 }
