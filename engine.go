@@ -6,9 +6,14 @@ import (
 )
 
 type (
-	EventKey  string
+	// EventKey is a unique identifier for an event.
+	EventKey string
+
+	// ActionKey is a unique identifier for an action.
 	ActionKey string
-	Action    func(ctx context.Context, data any) error
+
+	// Action is a function that will be executed when the event is triggered.
+	Action func(ctx context.Context, data any) error
 )
 
 // Engine maps events to actions and executes them.
@@ -17,25 +22,25 @@ type Engine struct {
 	triggers map[EventKey]ActionKey
 	// actions maps action keys to their corresponding actions
 	actions map[ActionKey]Action
-	// concurrencyGroups maps action keys to their concurrency configuration
-	concurrencyGroups   map[ActionKey]*concurrencyLimit
-	concurrencyGroupsMu sync.RWMutex
+	// actionConcurrencyLimits maps action keys to their concurrency configuration
+	actionConcurrencyLimits map[ActionKey]*concurrencyGroups
 }
 
 // NewEngine creates a new event engine.
 func NewEngine() *Engine {
 	return &Engine{
-		triggers:          make(map[EventKey]ActionKey),
-		actions:           make(map[ActionKey]Action),
-		concurrencyGroups: make(map[ActionKey]*concurrencyLimit),
+		triggers:                make(map[EventKey]ActionKey),
+		actions:                 make(map[ActionKey]Action),
+		actionConcurrencyLimits: make(map[ActionKey]*concurrencyGroups),
 	}
 }
 
 // On registers an action for the given event keys.
 func (e *Engine) On(eventKeys ...EventKey) *ActionBuilder {
 	return &ActionBuilder{
-		engine:    e,
-		eventKeys: eventKeys,
+		engine:            e,
+		eventKeys:         eventKeys,
+		concurrencyGroups: newConcurrencyGroups(),
 	}
 }
 
@@ -58,33 +63,38 @@ func (e *Engine) spawnAction(ctx context.Context, actionKey ActionKey, data any)
 		return
 	}
 
-	e.concurrencyGroupsMu.RLock()
-	limit := e.concurrencyGroups[actionKey]
-	e.concurrencyGroupsMu.RUnlock()
+	acquired, release := true, func() {}
+	groups := e.actionConcurrencyLimits[actionKey]
+	if len(groups.groups) > 0 {
+		acquired, release = groups.TryAcquire(ctx, data)
+	}
 
-	if limit != nil && !limit.TryAcquire() {
+	if !acquired {
 		return
 	}
 
-	go func(limit *concurrencyLimit) {
-		if limit != nil {
-			defer limit.Release()
-		}
-
+	go func(_release func()) {
+		defer _release()
 		// TODO: handle errors
 		_ = action(ctx, data)
-	}(limit)
+	}(release)
 }
 
 // ActionBuilder builds actions for events.
 type ActionBuilder struct {
-	engine           *Engine
-	eventKeys        []EventKey
-	concurrencyLimit int
+	engine            *Engine
+	eventKeys         []EventKey
+	concurrencyGroups *concurrencyGroups
 }
 
 func (ab *ActionBuilder) Concurrency(limit int) *ActionBuilder {
-	ab.concurrencyLimit = limit
+	ab.concurrencyGroups.AddGlobalLimit(uint(limit))
+
+	return ab
+}
+
+func (ab *ActionBuilder) ConcurrencyGroup(groupName string, limit uint, keyFunc func(ctx context.Context, data any) string) *ActionBuilder {
+	ab.concurrencyGroups.Add(groupName, limit, keyFunc)
 
 	return ab
 }
@@ -97,35 +107,105 @@ func (ab *ActionBuilder) Do(actionKey ActionKey, action Action) {
 		ab.engine.triggers[eventKey] = actionKey
 	}
 
-	if ab.concurrencyLimit > 0 {
-		ab.engine.concurrencyGroupsMu.Lock()
-		ab.engine.concurrencyGroups[actionKey] = newConcurrencyLimit(ab.concurrencyLimit)
-		ab.engine.concurrencyGroupsMu.Unlock()
+	ab.engine.actionConcurrencyLimits[actionKey] = ab.concurrencyGroups
+}
+
+type concurrencyGroups struct {
+	groups map[string]*concurrencyLimit
+	mu     sync.RWMutex
+}
+
+func newConcurrencyGroups() *concurrencyGroups {
+	return &concurrencyGroups{
+		groups: make(map[string]*concurrencyLimit),
 	}
+}
+
+func (c *concurrencyGroups) AddGlobalLimit(limit uint) {
+	c.mu.Lock()
+	c.groups[""] = newConcurrencyLimit(limit, nil)
+	c.mu.Unlock()
+}
+
+func (c *concurrencyGroups) Add(groupName string, limit uint, keyFunc func(ctx context.Context, data any) string) {
+	c.mu.Lock()
+	c.groups[groupName] = newConcurrencyLimit(limit, keyFunc)
+	c.mu.Unlock()
+}
+
+func (c *concurrencyGroups) TryAcquire(ctx context.Context, data any) (acquired bool, release func()) {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+
+	acquiredGroups := make([]*concurrencyLimit, 0, len(c.groups))
+	canRun := true
+	for _, group := range c.groups {
+		if !group.TryAcquire(ctx, data) {
+			canRun = false
+			break
+		}
+
+		acquiredGroups = append(acquiredGroups, group)
+	}
+
+	releaseFunc := func() {
+		for _, group := range acquiredGroups {
+			group.Release(ctx, data)
+		}
+	}
+
+	if canRun {
+		return true, releaseFunc
+	}
+
+	releaseFunc()
+	return false, nil
 }
 
 // concurrencyLimit is a semaphore that limits the number of concurrent actions.
 type concurrencyLimit struct {
-	limit     int
-	semaphore chan struct{}
+	limit      uint
+	semaphores map[string]chan struct{}
+	keyFunc    func(ctx context.Context, data any) string
 }
 
-func newConcurrencyLimit(limit int) *concurrencyLimit {
+func newConcurrencyLimit(limit uint, keyFunc func(ctx context.Context, data any) string) *concurrencyLimit {
 	return &concurrencyLimit{
-		limit:     limit,
-		semaphore: make(chan struct{}, limit),
+		limit:      limit,
+		semaphores: make(map[string]chan struct{}),
+		keyFunc:    keyFunc,
 	}
 }
 
-func (c *concurrencyLimit) TryAcquire() bool {
+func (c *concurrencyLimit) TryAcquire(ctx context.Context, data any) bool {
+	key := c.getKey(ctx, data)
+
+	semaphore, ok := c.semaphores[key]
+	if !ok {
+		semaphore = make(chan struct{}, c.limit)
+		c.semaphores[key] = semaphore
+	}
+
 	select {
-	case c.semaphore <- struct{}{}:
+	case semaphore <- struct{}{}:
 		return true
 	default:
 		return false
 	}
 }
 
-func (c *concurrencyLimit) Release() {
-	<-c.semaphore
+func (c *concurrencyLimit) Release(ctx context.Context, data any) {
+	key := c.getKey(ctx, data)
+
+	<-c.semaphores[key]
+}
+
+func (c *concurrencyLimit) getKey(ctx context.Context, data any) string {
+	key := ""
+
+	if c.keyFunc != nil {
+		key = c.keyFunc(ctx, data)
+	}
+
+	return key
 }
