@@ -12,7 +12,7 @@ import (
 )
 
 func TestActionBuilder_MultipleErrors(t *testing.T) {
-	engine := waffle.NewEngine()
+	engine := waffle.NewEngine(nil)
 
 	// Create multiple errors in the builder
 	err := engine.
@@ -39,7 +39,7 @@ func TestActionBuilder_MultipleErrors(t *testing.T) {
 }
 
 func TestActionBuilder_NegativeConcurrency(t *testing.T) {
-	engine := waffle.NewEngine()
+	engine := waffle.NewEngine(nil)
 
 	err := engine.
 		On("test").
@@ -55,7 +55,7 @@ func TestActionBuilder_NegativeConcurrency(t *testing.T) {
 func TestActionBuilder_ErrorDoesNotRegisterAction(t *testing.T) {
 	counter := atomic.Int32{}
 
-	engine := waffle.NewEngine()
+	engine := waffle.NewEngine(nil)
 
 	// Try to register with invalid configuration
 	err := engine.

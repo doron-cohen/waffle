@@ -14,7 +14,7 @@ import (
 func TestEngine_Send(t *testing.T) {
 	ran := false
 
-	engine := waffle.NewEngine()
+	engine := waffle.NewEngine(nil)
 
 	// Register action for event
 	require.NoError(t, engine.On("test").Do("test", func(_ context.Context, _ any) error {
@@ -33,7 +33,7 @@ func TestEngine_Send(t *testing.T) {
 func TestEngine_SendWithData(t *testing.T) {
 	data := ""
 
-	engine := waffle.NewEngine()
+	engine := waffle.NewEngine(nil)
 
 	require.NoError(t, engine.On("test").Do("test", func(_ context.Context, d any) error {
 		var ok bool
@@ -55,7 +55,7 @@ func TestEngine_SendWithData(t *testing.T) {
 func TestEngine_SendMultiple(t *testing.T) {
 	counter := atomic.Int32{}
 
-	engine := waffle.NewEngine()
+	engine := waffle.NewEngine(nil)
 
 	require.NoError(t, engine.On("test").Do("test", func(_ context.Context, _ any) error {
 		counter.Add(1)
@@ -78,7 +78,7 @@ func TestEngine_DifferentActionsForEvent(t *testing.T) {
 	ran1 := false
 	ran2 := false
 
-	engine := waffle.NewEngine()
+	engine := waffle.NewEngine(nil)
 
 	require.NoError(t, engine.On("test").Do("test1", func(_ context.Context, _ any) error {
 		ran1 = true
@@ -101,7 +101,7 @@ func TestEngine_DifferentActionsForEvent(t *testing.T) {
 func TestEngine_OneActionForMultipleEvents(t *testing.T) {
 	counter := atomic.Int32{}
 
-	engine := waffle.NewEngine()
+	engine := waffle.NewEngine(nil)
 
 	require.NoError(t, engine.On("test1", "test2").Do("test", func(_ context.Context, _ any) error {
 		counter.Add(1)
@@ -122,7 +122,7 @@ func TestEngine_OneActionForMultipleEvents(t *testing.T) {
 func TestEngine_ConcurrencyLimit(t *testing.T) {
 	counter := atomic.Int32{}
 
-	engine := waffle.NewEngine()
+	engine := waffle.NewEngine(nil)
 
 	require.NoError(t, engine.
 		On("test").
@@ -147,7 +147,7 @@ func TestEngine_ConcurrencyLimit_MultipleActions(t *testing.T) {
 	counter1 := atomic.Int32{}
 	counter2 := atomic.Int32{}
 
-	engine := waffle.NewEngine()
+	engine := waffle.NewEngine(nil)
 
 	require.NoError(t, engine.
 		On("test").
@@ -178,7 +178,7 @@ func TestEngine_ConcurrencyLimit_MultipleActions(t *testing.T) {
 func TestEngine_ConcurrencyGroup_Basic(t *testing.T) {
 	users := make([]string, 0, 3)
 
-	engine := waffle.NewEngine()
+	engine := waffle.NewEngine(nil)
 
 	require.NoError(t, engine.
 		On("test").
@@ -207,7 +207,7 @@ func TestEngine_ConcurrencyGroup_MultipleGroupsWithSameKey(t *testing.T) {
 	counter := atomic.Int32{}
 	users := make([]string, 0, 3)
 
-	engine := waffle.NewEngine()
+	engine := waffle.NewEngine(nil)
 
 	require.NoError(t, engine.
 		On("test").
@@ -239,7 +239,7 @@ func TestEngine_ConcurrencyGroup_WithGlobalLimit(t *testing.T) {
 	counter := atomic.Int32{}
 	users := make([]string, 0, 2)
 
-	engine := waffle.NewEngine()
+	engine := waffle.NewEngine(nil)
 
 	require.NoError(t, engine.
 		On("test").
@@ -268,7 +268,7 @@ func TestEngine_ConcurrencyGroup_WithGlobalLimit(t *testing.T) {
 func TestEngine_ConcurrencyGroup_KeyFunctionNil(t *testing.T) {
 	counter := atomic.Int32{}
 
-	engine := waffle.NewEngine()
+	engine := waffle.NewEngine(nil)
 
 	// Test with nil key function - should return an error
 	err := engine.
@@ -292,7 +292,7 @@ func TestEngine_ConcurrencyGroup_ComplexData(t *testing.T) {
 
 	counter := atomic.Int32{}
 
-	engine := waffle.NewEngine()
+	engine := waffle.NewEngine(nil)
 
 	require.NoError(t, engine.
 		On("process").
@@ -323,7 +323,7 @@ func TestEngine_ContextCancellation(t *testing.T) {
 	counter := atomic.Int32{}
 	ctx, cancel := context.WithCancel(t.Context())
 
-	engine := waffle.NewEngine()
+	engine := waffle.NewEngine(nil)
 
 	require.NoError(t, engine.
 		On("test").
@@ -358,7 +358,7 @@ func TestEngine_ContextCancellation(t *testing.T) {
 func TestEngine_ConcurrencyGroup_EmptyGroupName(t *testing.T) {
 	counter := atomic.Int32{}
 
-	engine := waffle.NewEngine()
+	engine := waffle.NewEngine(nil)
 
 	// Empty group name should return an error
 	err := engine.
@@ -374,4 +374,182 @@ func TestEngine_ConcurrencyGroup_EmptyGroupName(t *testing.T) {
 
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "groupName must be provided")
+}
+
+func TestEngine_OperationLogging_EventReceived(t *testing.T) {
+	logger := waffle.NewTestOperationLogger()
+	engine := waffle.NewEngine(logger)
+
+	require.NoError(t, engine.On("test").Do("test", func(_ context.Context, _ any) error {
+		return nil
+	}))
+
+	// Send an event
+	started := engine.Send(t.Context(), "test", nil)
+	require.True(t, started)
+
+	// Wait for async operation
+	time.Sleep(10 * time.Millisecond)
+
+	// Assert event received was logged
+	logger.AssertEventLogged(t, "waffle.event.received")
+	logger.AssertEventLoggedWithMetadata(t, "waffle.event.received", map[string]string{
+		"eventKey": "test",
+	})
+}
+
+func TestEngine_OperationLogging_ActionSpawned(t *testing.T) {
+	logger := waffle.NewTestOperationLogger()
+	engine := waffle.NewEngine(logger)
+
+	require.NoError(t, engine.On("test").Do("test", func(_ context.Context, _ any) error {
+		return nil
+	}))
+
+	// Send an event
+	started := engine.Send(t.Context(), "test", nil)
+	require.True(t, started)
+
+	// Wait for async operation
+	time.Sleep(10 * time.Millisecond)
+
+	// Assert action spawned was logged
+	logger.AssertEventLogged(t, "waffle.action.spawned")
+	logger.AssertEventLoggedWithMetadata(t, "waffle.action.spawned", map[string]string{
+		"actionKey": "test",
+		"eventKey":  "test",
+	})
+}
+
+func TestEngine_OperationLogging_ActionStarted(t *testing.T) {
+	logger := waffle.NewTestOperationLogger()
+	engine := waffle.NewEngine(logger)
+
+	executed := false
+	require.NoError(t, engine.On("test").Do("test", func(_ context.Context, _ any) error {
+		executed = true
+		return nil
+	}))
+
+	// Send an event
+	started := engine.Send(t.Context(), "test", nil)
+	require.True(t, started)
+
+	// Wait for async operation
+	time.Sleep(10 * time.Millisecond)
+
+	// Assert action started was logged
+	logger.AssertEventLogged(t, "waffle.action.started")
+	logger.AssertEventLoggedWithMetadata(t, "waffle.action.started", map[string]string{
+		"actionKey": "test",
+		"eventKey":  "test",
+	})
+	require.True(t, executed)
+}
+
+func TestEngine_OperationLogging_ConcurrencySuccess(t *testing.T) {
+	logger := waffle.NewTestOperationLogger()
+	engine := waffle.NewEngine(logger)
+
+	require.NoError(t, engine.
+		On("test").
+		Concurrency(2). // Allow 2 concurrent actions
+		Do("test", func(_ context.Context, _ any) error {
+			time.Sleep(50 * time.Millisecond)
+			return nil
+		}))
+
+	// Send first event
+	started1 := engine.Send(t.Context(), "test", nil)
+	require.True(t, started1)
+
+	// Send second event (should succeed with concurrency limit)
+	started2 := engine.Send(t.Context(), "test", nil)
+	require.True(t, started2)
+
+	// Wait for operations
+	time.Sleep(100 * time.Millisecond)
+
+	// Assert concurrency acquire success was logged twice
+	logger.AssertEventLoggedTimes(t, "waffle.concurrency.acquire_success", 2)
+	logger.AssertEventLogged(t, "waffle.concurrency.released")
+}
+
+func TestEngine_OperationLogging_ConcurrencyFailed(t *testing.T) {
+	logger := waffle.NewTestOperationLogger()
+	engine := waffle.NewEngine(logger)
+
+	require.NoError(t, engine.
+		On("test").
+		Concurrency(1). // Allow only 1 concurrent action
+		Do("test", func(_ context.Context, _ any) error {
+			time.Sleep(100 * time.Millisecond)
+			return nil
+		}))
+
+	// Send first event
+	started1 := engine.Send(t.Context(), "test", nil)
+	require.True(t, started1)
+
+	// Send second event (should fail due to concurrency limit)
+	started2 := engine.Send(t.Context(), "test", nil)
+	require.True(t, started2)
+
+	// Wait for operations
+	time.Sleep(150 * time.Millisecond)
+
+	// Assert concurrency acquire success was logged once
+	logger.AssertEventLoggedTimes(t, "waffle.concurrency.acquire_success", 1)
+	// Assert concurrency acquire failed was logged once
+	logger.AssertEventLoggedTimes(t, "waffle.concurrency.acquire_failed", 1)
+	// Assert released was logged once
+	logger.AssertEventLoggedTimes(t, "waffle.concurrency.released", 1)
+}
+
+func TestEngine_OperationLogging_EventNotRegistered(t *testing.T) {
+	logger := waffle.NewTestOperationLogger()
+	engine := waffle.NewEngine(logger)
+
+	// Send event that has no registered action
+	started := engine.Send(t.Context(), "nonexistent", nil)
+	require.False(t, started)
+
+	// Assert no events are logged when event is not registered
+	logger.AssertNoEventsLogged(t)
+}
+
+func TestEngine_OperationLogging_NoLogger(t *testing.T) {
+	// Test with nil logger - should not panic
+	engine := waffle.NewEngine(nil)
+
+	require.NoError(t, engine.On("test").Do("test", func(_ context.Context, _ any) error {
+		return nil
+	}))
+
+	started := engine.Send(t.Context(), "test", nil)
+	require.True(t, started)
+
+	// Should work fine with no logger
+	time.Sleep(10 * time.Millisecond)
+}
+
+func TestEngine_OperationLogging_InternalEventsNotLogged(t *testing.T) {
+	logger := waffle.NewTestOperationLogger()
+	engine := waffle.NewEngine(logger)
+
+	require.NoError(t, engine.On("test").Do("test", func(_ context.Context, _ any) error {
+		return nil
+	}))
+
+	// Send an event
+	started := engine.Send(t.Context(), "test", nil)
+	require.True(t, started)
+
+	// Wait for async operation
+	time.Sleep(10 * time.Millisecond)
+
+	// Assert that internal events are NOT logged as "received" events
+	logger.AssertEventNotLogged(t, "waffle.action.spawned.received")
+	logger.AssertEventNotLogged(t, "waffle.action.started.received")
+	logger.AssertEventNotLogged(t, "waffle.concurrency.acquire_success.received")
 }
