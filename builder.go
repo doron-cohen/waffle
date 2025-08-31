@@ -90,13 +90,12 @@ func (ab *ActionBuilder) Do(actionKey ActionKey, action Action) error {
 		return &ErrBuilderBadParams{Errors: ab.errors}
 	}
 
-	ab.engine.actions[actionKey] = action
-
-	for _, eventKey := range ab.eventKeys {
-		ab.engine.triggers[eventKey] = actionKey
-	}
-
-	ab.engine.actionConcurrencyLimits[actionKey] = ab.concurrencyGroups
+	ab.engine.AddActionConfiguration(ActionConfiguration{
+		EventKeys:         ab.eventKeys,
+		ConcurrencyGroups: ab.concurrencyGroups,
+		ActionKey:         actionKey,
+		Action:            action,
+	})
 
 	return nil
 }

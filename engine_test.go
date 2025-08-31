@@ -94,7 +94,7 @@ func TestEngine_DifferentActionsForEvent(t *testing.T) {
 
 	time.Sleep(100 * time.Millisecond)
 
-	require.False(t, ran1)
+	require.True(t, ran1)
 	require.True(t, ran2)
 }
 
